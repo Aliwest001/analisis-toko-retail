@@ -1,0 +1,291 @@
+----- ANALISIS SALES PERFORMANCE Toko Retail 2025-2025 -----												
+                                                
+                                                -------- DATA CLEANSING -------
+
+-------- 1. CEK JUMLAH BARIS ------
+select count(*) as total_row
+from orders;
+
+----- 2. cek data duplikat ----
+select
+	count(*) as total_row,
+	count(distinct order_id) as unique_order,
+    count(*) - count(distinct order_id) as duplicate_rows
+from orders;
+
+-------- 3. cek missing value -----
+with cek_missing as (
+select
+	sum(case when order_id is null then 1 else 0 end) as missing_order_id,
+	sum(case when customer_id is null then 1 else 0 end) as missing_customer_id,
+    sum(case when store_id is null then 1 else 0 end) as missing_store_id,
+    sum(case when employee_id is null then 1 else 0 end) as missing_employee_id,
+    sum(case when order_date is null then 1 else 0 end) as missing_order_date,
+    sum(case when payment_method is null then 1 else 0 end) as missing_payment,
+    sum(case when order_status is null then 1 else 0 end) as missing_order_status
+from orders)
+select * 
+from cek_missing;
+
+
+													-----   KPI  -----
+
+----------- 1. KPI YoY: total_transaction, units_sold, cost_price, total_revenue, profit, profit_margin ------------- 
+create view KPI as (
+with KPI_detail as (
+select 
+	year(o.order_date) as `year`,
+    count(distinct o.order_id) as total_transaction,
+    sum(oi.quantity) as units_sold,
+    sum(p.cost_price * oi.quantity) as total_cost,
+	round(sum(oi.unit_price * (1 - oi.discount_pct/100) * oi.quantity)) as total_revenue,
+    round(sum((oi.unit_price * (1 - oi.discount_pct/100) * oi.quantity) - (p.cost_price * oi.quantity))) as profit
+from orders o
+join order_items oi
+	on o.order_id = oi.order_id
+join products p
+	on oi.product_id = p.product_id
+where o.order_status = 'Selesai'
+group by
+    `year`
+)
+select
+	`year`,
+    total_transaction,
+    units_sold,
+    total_cost,
+    total_revenue,
+    profit,
+    round((profit) / (total_revenue) * 100, 2) as profit_margin
+from KPI_detail);
+
+-------------- 2.  Growth Revenue Rate  --------------------
+create view growth_revenue_rate as (
+with revenue_yearly as (
+	select
+		year(o.order_date) as tahun,
+		round(sum(oi.unit_price * (1 - oi.discount_pct/100) * oi.quantity)) as total_revenue
+	from orders o
+	join order_items oi
+		on o.order_id = oi.order_id
+	where o.order_status = 'Selesai'
+	group by year(o.order_date)
+),
+calculated_growth as (
+	select
+		tahun,
+		total_revenue,
+		round((total_revenue / lag(total_revenue) over (order by tahun) - 1) * 100, 2) as growth_rate
+	from revenue_yearly
+)
+select
+	tahun,
+	total_revenue,
+	growth_rate
+from calculated_growth
+where growth_rate is not null);    
+
+----------- 3. KPI AVERAGE ORDER VALUE YoY ----------
+create view aov_YoY as (
+with detail_aov as (
+	select
+		year(o.order_date) as `year`,
+		count(distinct o.order_id) as total_transaction,
+		round(sum(oi.unit_price * (1 - oi.discount_pct/100) * oi.quantity)) as total_revenue
+	from orders o
+	join order_items oi
+		on oi.order_id = o.order_id
+	where o.order_status = 'Selesai'
+	group by year(o.order_date)
+)
+select
+	`year`,
+	total_transaction,
+	total_revenue,
+	round((total_revenue / total_transaction)) as average_order_value
+from detail_aov
+order by `year` asc);
+
+
+
+									----------------- Exploratory Data analysis (EDA) -----------------------
+
+-------------- 1. ANALISIS TREND MoM UNTUK PERIODE 2024 & 2025. ----------
+create view trend_mom as (
+select
+	year(o.order_date) as tahun,
+	monthname(o.order_date) as bulan,
+	round(sum(oi.unit_price * (1 - oi.discount_pct/100) * oi.quantity)) as total_revenue
+from order_items oi
+join orders o
+	on oi.order_id = o.order_id
+where
+	o.order_status = 'Selesai'
+    group by
+	year(o.order_date),
+	month(o.order_date),
+	monthname(o.order_date)
+order by
+	year(o.order_date),
+	month(o.order_date)
+);
+
+-------------- 2. ANALISIS TOTAL BELANJA CUSTOMER YoY ----------
+create view analisis_customer as (
+with belanja_customer as (
+	select
+		year(o.order_date) as `year`,
+		cus.customer_name,
+		round(sum(oi.unit_price * (1 - oi.discount_pct/100) * oi.quantity)) as shopping_value
+	from customers cus
+	join orders o
+		on cus.customer_id = o.customer_id
+	join order_items oi
+		on o.order_id = oi.order_id
+	where o.order_status = 'Selesai'
+	group by
+		year(o.order_date),
+		cus.customer_id
+)
+select
+	`year`,
+	customer_name,
+	shopping_value
+from belanja_customer
+order by shopping_value desc
+);
+
+
+-------- 3. ANALISA DETAIL PRODUK YoY ------
+create view detail_products as (
+with detail_product as (
+	select
+		year(o.order_date) as `year`,
+		p.product_name,
+		p.cost_price,
+		coalesce(oi.unit_price, p.list_price) as unit_price
+	from products p
+	left join order_items oi on p.product_id = oi.product_id
+	left join orders o on oi.order_id = o.order_id
+	group by
+		`year`,
+		p.product_id,
+		p.cost_price,
+		oi.unit_price
+)
+select
+	`year`,
+	product_name,
+	cost_price,
+	unit_price,
+	round((unit_price - cost_price) / unit_price * 100, 2) as margin_product
+from detail_product
+order by product_name, `year`
+);
+
+
+-------- 4. ANALISIS KINERJA PRODUCT YoY --------
+create view kinerja_product as (
+with product_revenue as (
+	select
+		year(o.order_date) as `year`,
+		p.product_name,
+		sum(oi.quantity) as total_quantity_sold,
+		count(distinct o.order_id) as total_transaction,
+		sum(oi.quantity * p.cost_price) as total_cost_product,
+		round(sum(oi.unit_price * (1 - oi.discount_pct/100) * oi.quantity)) as total_revenue
+	from products p
+	join order_items oi on p.product_id = oi.product_id
+	join orders o on oi.order_id = o.order_id
+	where o.order_status = 'Selesai'
+	group by
+		year(o.order_date),
+		p.product_name
+)
+select
+	`year`,
+	product_name,
+	total_quantity_sold,
+	total_transaction,
+	total_revenue,
+	round((total_revenue - total_cost_product)) as profit_product,
+	round((total_revenue - total_cost_product) / total_revenue * 100, 2) as profit_margin
+from product_revenue
+order by
+	`year` asc,
+	total_quantity_sold desc
+);
+
+-------- 5. PRODUK YANG TIDAK MEMILIKI TRANSAKSI ------
+select p.product_name
+from products p
+left join order_items oi on p.product_id = oi.product_id
+where oi.order_id is null;
+
+
+
+-------- 6. ANALISA KINERJA KATEGORI PRODUK YoY -------
+create view kinerja_category_products as (
+with revenue_category as (
+	select
+		year(o.order_date) as `year`,
+		c.category_name,
+		sum(oi.quantity) as total_quantity_sold,
+		count(distinct o.order_id) as total_transaction,
+		sum(oi.quantity * p.cost_price) as total_cost_category,
+		round(sum(oi.unit_price * (1 - oi.discount_pct/100) * oi.quantity)) as total_revenue
+	from categories c
+	join products p on c.category_id = p.category_id
+	join order_items oi on oi.product_id = p.product_id
+	join orders o on oi.order_id = o.order_id
+	where o.order_status = 'Selesai'
+	group by
+		year(o.order_date),
+		c.category_name
+)
+select
+	`year`,
+	category_name,
+	total_quantity_sold,
+	total_transaction,
+	total_cost_category,
+	total_revenue,
+	round((total_revenue - total_cost_category)) as profit_category,
+	round(total_revenue / sum(total_revenue) over (partition by `year`) * 100, 2) as revenue_contribution,
+	round((total_revenue - total_cost_category) / total_revenue * 100, 2) as margin_profit
+from revenue_category
+order by
+	`year` asc,
+	revenue_contribution desc
+);
+
+
+-------- 7. ANALISIS KINERJA STORE -------
+create view kinerja_store as (
+with detail_store as (
+select
+	year(o.order_date) as `year`,
+	s.store_name,
+    s.city,
+    count(distinct o.order_id) as total_transaction ,
+    round(sum((oi.unit_price * (1 - (oi.discount_pct/100))) * oi.quantity)) as total_revenue
+from stores s
+join orders o on s.store_id = o.store_id
+join order_items oi on o.order_id = oi.order_id
+where o.order_status = 'Selesai'
+group by
+	s.store_name,
+    s.city,
+    `year`)
+select
+	`year`,
+    store_name,
+    city,
+    total_transaction,
+    total_revenue,
+    round((total_revenue/total_transaction)) as average_order_value
+from detail_store
+order by
+	`year` asc,
+    total_revenue desc
+);
