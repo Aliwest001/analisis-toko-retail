@@ -15,7 +15,7 @@ from orders;
 
 -------- 3. cek missing value -----
 with cek_missing as (
-select
+select 
 	sum(case when order_id is null then 1 else 0 end) as missing_order_id,
     sum(case when customer_id is null then 1 else 0 end) as missing_customer_id,
     sum(case when store_id is null then 1 else 0 end) as missing_store_id,
