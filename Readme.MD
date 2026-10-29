@@ -1,4 +1,4 @@
-							Analisis Penjualan Toko Retail (MySQL dan Power BI)
+		Analisis Penjualan Toko Retail (MySQL dan Power BI)
 
 
 
