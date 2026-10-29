@@ -5,7 +5,7 @@
 Proyek analisis data end-to-end: dari menyiapkan basis data relasional, menganalisisnya dengan SQL, sampai menyajikan hasilnya dalam dashboard Power BI.
 Proyek ini dibuat sebagai latihan pribadi untuk membangun alur kerja seorang data analyst.
 
-Catatan: seluruh data bersifat sintetis, bukan data perusahaan sungguhan.
+Catatan: dataset yang digunakan dibuat oleh Claude untuk keperluan project analisis data mandiri, jadi seluruh data bersifat sintetis, bukan data perusahaan sungguhan.
 
 
 PERTANYAAN BISNIS
